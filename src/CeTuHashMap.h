@@ -36,9 +36,11 @@ class CeTuHashMap final {
 public:
     CeTuHashMap();
     ~CeTuHashMap();
+
     CeTuHashMap(const CeTuHashMap& other);
-    CeTuHashMap(CeTuHashMap&& other) noexcept;
     CeTuHashMap& operator=(const CeTuHashMap& other);
+
+    CeTuHashMap(CeTuHashMap&& other) noexcept;
     CeTuHashMap& operator=(CeTuHashMap&& other) noexcept;
 
     void insert(K key, V value);
@@ -69,6 +71,8 @@ private:
 
     size_t hash(const K& key) const { return std::hash<K>{}(key) % capacity; }
     void rehash();
+    void copy(const CeTuHashMap& other);
+    void remove();
 };
 
 // Constructor
@@ -82,39 +86,33 @@ CeTuHashMap<K, V>::CeTuHashMap() : currentSize(0), capacity(defaultSize) {
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>::~CeTuHashMap() {
-    for (size_t i = 0; i < capacity; i++) {
-        Node* current = buckets[i];
-        while (current != nullptr) {
-            Node* next = current->next;
-            delete current;
-            current = next;
-        }
-    }
-    delete[] buckets;
+    remove();
 }
 
 // Copy constructor
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>::CeTuHashMap(const CeTuHashMap& other) : currentSize(other.currentSize), capacity(other.capacity) {
-    buckets = new Node*[capacity]();
-    for (size_t i = 0; i < capacity; i++) {
-        if (other.buckets[i] != nullptr) {
-            // Copy the linked list at this bucket
-            Node* otherCurrent = other.buckets[i];
-            Node* prev = nullptr;
-            while (otherCurrent != nullptr) {
-                Node* newNode = new Node(otherCurrent->key, otherCurrent->value);
-                if (prev == nullptr) {
-                    buckets[i] = newNode;
-                } else {
-                    prev->next = newNode;
-                }
-                prev = newNode;
-                otherCurrent = otherCurrent->next;
-            }
-        }
+    copy(other);
+}
+
+// Copy assignment operator
+template<typename K, typename V>
+requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
+    if (this == &other) {
+        return *this;
     }
+
+    // Clear existing contents
+    remove();
+
+    // Copy from other
+    capacity = other.capacity;
+    currentSize = other.currentSize;
+    copy(other);
+
+    return *this;
 }
 
 // Move constructor
@@ -127,73 +125,27 @@ CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(other.buc
     other.capacity = 0;
 }
 
-// Copy assignment operator
-template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
-    if (this != &other) {
-        // Clear existing contents
-        for (size_t i = 0; i < capacity; i++) {
-            Node* current = buckets[i];
-            while (current != nullptr) {
-                Node* next = current->next;
-                delete current;
-                current = next;
-            }
-        }
-        delete[] buckets;
-
-        // Copy from other
-        capacity = other.capacity;
-        currentSize = other.currentSize;
-        buckets = new Node*[capacity]();
-
-        for (size_t i = 0; i < capacity; i++) {
-            if (other.buckets[i] != nullptr) {
-                Node* otherCurrent = other.buckets[i];
-                Node* prev = nullptr;
-                while (otherCurrent != nullptr) {
-                    Node* newNode = new Node(otherCurrent->key, otherCurrent->value);
-                    if (prev == nullptr) {
-                        buckets[i] = newNode;
-                    } else {
-                        prev->next = newNode;
-                    }
-                    prev = newNode;
-                    otherCurrent = otherCurrent->next;
-                }
-            }
-        }
-    }
-    return *this;
-}
-
 // Move assignment operator
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
-    if (this != &other) {
-        // Delete current contents
-        for (size_t i = 0; i < capacity; i++) {
-            Node* current = buckets[i];
-            while (current != nullptr) {
-                Node* next = current->next;
-                delete current;
-                current = next;
-            }
-        }
-        delete[] buckets;
-
-        // Move from other
-        buckets = other.buckets;
-        currentSize = other.currentSize;
-        capacity = other.capacity;
-
-        // Reset other
-        other.buckets = nullptr;
-        other.currentSize = 0;
-        other.capacity = 0;
+    if (this == &other) {
+        return *this;
     }
+
+    // Delete current contents
+    remove();
+
+    // Move from other
+    buckets = other.buckets;
+    currentSize = other.currentSize;
+    capacity = other.capacity;
+
+    // Reset other
+    other.buckets = nullptr;
+    other.currentSize = 0;
+    other.capacity = 0;
+
     return *this;
 }
 
@@ -294,6 +246,43 @@ void CeTuHashMap<K, V>::rehash() {
     }
 
     delete[] oldBuckets;
+}
+
+template<typename K, typename V>
+requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+void CeTuHashMap<K, V>::copy(const CeTuHashMap& other) {
+    buckets = new Node*[capacity]();
+    for (size_t i = 0; i < capacity; i++) {
+        if (other.buckets[i] != nullptr) {
+            // Copy the linked list at this bucket
+            Node* otherCurrent = other.buckets[i];
+            Node* prev = nullptr;
+            while (otherCurrent != nullptr) {
+                Node* newNode = new Node(otherCurrent->key, otherCurrent->value);
+                if (prev == nullptr) {
+                    buckets[i] = newNode;
+                } else {
+                    prev->next = newNode;
+                }
+                prev = newNode;
+                otherCurrent = otherCurrent->next;
+            }
+        }
+    }
+}
+
+template<typename K, typename V>
+requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+void CeTuHashMap<K, V>::remove() {
+    for (size_t i = 0; i < capacity; i++) {
+        Node* current = buckets[i];
+        while (current != nullptr) {
+            Node* next = current->next;
+            delete current;
+            current = next;
+        }
+    }
+    delete[] buckets;
 }
 
 #endif // CETU_HASHMAP_H
