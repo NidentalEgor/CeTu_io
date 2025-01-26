@@ -52,7 +52,12 @@ private:
         K key;
         V value;
         Node* next;
+
         Node(const K& k, const V& v) : key(k), value(v), next(nullptr) {}
+
+        template<typename KeyType, typename ValueType, typename = std::enable_if_t<std::is_move_constructible_v<K> && std::is_move_constructible_v<V>>>
+        Node(KeyType&& k, ValueType&& v) : key(std::forward<KeyType>(k)),
+            value(std::forward<ValueType>(v)), next(nullptr) {}
     };
 
     Node** buckets;
@@ -208,7 +213,7 @@ void CeTuHashMap<K, V>::insert(K key, V value) {
     }
 
     // Create new node and insert at the beginning of the list
-    Node* newNode = new Node(key, value);
+    Node* newNode = new Node(std::move(key), std::move(value));
     newNode->next = buckets[index];
     buckets[index] = newNode;
     currentSize++;
@@ -282,7 +287,7 @@ void CeTuHashMap<K, V>::rehash() {
         Node* current = oldBuckets[i];
         while (current) {
             Node* next = current->next;
-            insert(current->key, current->value);
+            insert(std::move(current->key), (current->value));
             delete current;
             current = next;
         }
