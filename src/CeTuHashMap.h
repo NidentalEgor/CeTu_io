@@ -29,13 +29,13 @@ concept CopyAssignableAndConstructible =
     std::is_copy_constructible_v<K> && std::is_copy_assignable_v<K> &&
     std::is_copy_constructible_v<V> && std::is_copy_assignable_v<V>;
 
-
+// Attention: CeTuHashMap is not thread-safe.
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 class CeTuHashMap final {
 public:
     CeTuHashMap();
-    ~CeTuHashMap();
+    ~CeTuHashMap() noexcept;
 
     CeTuHashMap(const CeTuHashMap& other);
     CeTuHashMap& operator=(const CeTuHashMap& other);
@@ -44,7 +44,7 @@ public:
     CeTuHashMap& operator=(CeTuHashMap&& other) noexcept;
 
     void insert(K key, V value);
-    std::optional<V> lookup(K key);
+    std::optional<V> lookup(K key) const;
     void erase(K key);
     size_t size() const { return currentSize; }
 
@@ -85,7 +85,7 @@ CeTuHashMap<K, V>::CeTuHashMap() : currentSize(0), capacity(defaultSize) {
 // Destructor
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-CeTuHashMap<K, V>::~CeTuHashMap() {
+CeTuHashMap<K, V>::~CeTuHashMap() noexcept {
     remove();
 }
 
@@ -133,18 +133,9 @@ CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
         return *this;
     }
 
-    // Delete current contents
-    remove();
-
-    // Move from other
-    buckets = other.buckets;
-    currentSize = other.currentSize;
-    capacity = other.capacity;
-
-    // Reset other
-    other.buckets = nullptr;
-    other.currentSize = 0;
-    other.capacity = 0;
+    std::swap(buckets, other.buckets);
+    std::swap(currentSize, other.currentSize);
+    std::swap(capacity, other.capacity);
 
     return *this;
 }
@@ -177,7 +168,7 @@ void CeTuHashMap<K, V>::insert(K key, V value) {
 
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-std::optional<V>  CeTuHashMap<K, V>::lookup(K key) {
+std::optional<V>  CeTuHashMap<K, V>::lookup(K key) const {
     if(currentSize == 0) {
         return std::nullopt;
     }
@@ -239,7 +230,7 @@ void CeTuHashMap<K, V>::rehash() {
         Node* current = oldBuckets[i];
         while (current) {
             Node* next = current->next;
-            insert(std::move(current->key), (current->value));
+            insert(std::move(current->key), std::move(current->value));
             delete current;
             current = next;
         }
