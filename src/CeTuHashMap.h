@@ -20,9 +20,12 @@ concept CopyAssignableAndConstructible =
     std::is_copy_constructible_v<K> && std::is_copy_assignable_v<K> &&
     std::is_copy_constructible_v<V> && std::is_copy_assignable_v<V>;
 
+template<typename K, typename V>
+concept HashMapRequirements = Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>;
+
 // Attention: CeTuHashMap is not thread-safe.
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 class CeTuHashMap final {
 public:
     CeTuHashMap();
@@ -109,25 +112,25 @@ private:
 
 // Constructor
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::CeTuHashMap() : buckets(defaultSize), currentSize(0), capacity(defaultSize) {}
 
 // Destructor
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::~CeTuHashMap() noexcept {
 }
 
 // Copy constructor
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::CeTuHashMap(const CeTuHashMap& other) : currentSize(other.currentSize), capacity(other.capacity) {
     copy(other);
 }
 
 // Copy assignment operator
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
     if(this == &other) {
         return *this;
@@ -143,7 +146,7 @@ CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
 
 // Move constructor
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(std::move(other.buckets)),
     currentSize(other.currentSize), capacity(other.capacity) {
     other.currentSize = 0;
@@ -152,7 +155,7 @@ CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(std::move
 
 // Move assignment operator
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
     if(this == &other) {
         return *this;
@@ -166,7 +169,7 @@ CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::insert(K key, V value) {
     if(currentSize > capacity * loadFactor) {
         rehash();
@@ -192,7 +195,7 @@ void CeTuHashMap<K, V>::insert(K key, V value) {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 std::optional<V>  CeTuHashMap<K, V>::lookup(K key) {
     if(currentSize == 0) {
         return std::nullopt;
@@ -212,7 +215,7 @@ std::optional<V>  CeTuHashMap<K, V>::lookup(K key) {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::erase(K key) {
     if(currentSize == 0) {
         return;
@@ -239,7 +242,7 @@ void CeTuHashMap<K, V>::erase(K key) {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::rehash() {
     size_t newCapacity = capacity * 2;
     buckets.rehash(newCapacity);
@@ -247,7 +250,7 @@ void CeTuHashMap<K, V>::rehash() {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::copy(const CeTuHashMap& other) {
     BucketsHolder tempBuckets(capacity);
     for(size_t i = 0; i < capacity; i++) {
@@ -272,13 +275,13 @@ void CeTuHashMap<K, V>::copy(const CeTuHashMap& other) {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 template<typename... Args>
 CeTuHashMap<K, V>::NodeHolder::NodeHolder(Args&&... args) :
     node(new Node(std::forward<Args>(args)...)) {}
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::Node* CeTuHashMap<K, V>::NodeHolder::release() {
     Node* tmp = node;
     node = nullptr;
@@ -286,7 +289,7 @@ CeTuHashMap<K, V>::Node* CeTuHashMap<K, V>::NodeHolder::release() {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::BucketsHolder::BucketsHolder(BucketsHolder&& other) noexcept :
     capacity(other.capacity), buckets(other.buckets)
 {
@@ -295,7 +298,7 @@ CeTuHashMap<K, V>::BucketsHolder::BucketsHolder(BucketsHolder&& other) noexcept 
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 CeTuHashMap<K, V>::BucketsHolder& CeTuHashMap<K, V>::BucketsHolder::operator=(BucketsHolder&& other) noexcept {
     if(this == &other) {
         return *this;
@@ -308,7 +311,7 @@ CeTuHashMap<K, V>::BucketsHolder& CeTuHashMap<K, V>::BucketsHolder::operator=(Bu
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::BucketsHolder::rehash(size_t newCapacity) {
     // Create new array of buckets
     Node** newBuckets = new Node*[newCapacity]();
@@ -335,7 +338,7 @@ void CeTuHashMap<K, V>::BucketsHolder::rehash(size_t newCapacity) {
 }
 
 template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
+requires HashMapRequirements<K, V>
 void CeTuHashMap<K, V>::BucketsHolder::clear() {
     if(buckets) {
         for (size_t i = 0; i < capacity; ++i) {
