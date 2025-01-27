@@ -3,16 +3,7 @@
 
 #include <optional>
 #include <concepts>
-
-// защита от исключений
-// многопоточность
-// копирование с обменом
-// CeTuHashMap& operator=(CeTuHashMap other) {
-//     std::swap(buckets, other.buckets);
-//     std::swap(currentSize, other.currentSize);
-//     std::swap(capacity, other.capacity);
-//     return *this;
-// }
+#include <iostream>
 
 template <typename K>
 concept Hashable = requires {
@@ -44,7 +35,7 @@ public:
     CeTuHashMap& operator=(CeTuHashMap&& other) noexcept;
 
     void insert(K key, V value);
-    std::optional<V> lookup(K key) const;
+    std::optional<V> lookup(K key);
     void erase(K key);
     size_t size() const { return currentSize; }
 
@@ -62,7 +53,106 @@ private:
             value(std::forward<ValueType>(v)), next(nullptr) {}
     };
 
-    Node** buckets;
+    // RAII wrapper for a single node
+    class NodeHolder {
+    public:
+        template<typename... Args>
+        explicit NodeHolder(Args&&... args) : node(new Node(std::forward<Args>(args)...)) {}
+
+        ~NodeHolder() { delete node; }
+
+        Node* release() {
+            Node* tmp = node;
+            node = nullptr;
+            return tmp;
+        }
+
+        Node* get() { return node; }
+
+    private:
+        Node* node;
+    };
+
+    // RAII wrapper for the bucket array
+    class BucketsHolder {
+    public:
+        BucketsHolder() : capacity(0), buckets(nullptr) {}
+        explicit BucketsHolder(size_t _capacity) : capacity(_capacity), buckets(new Node*[capacity]()) {}
+        ~BucketsHolder() {
+            // clear();
+        }
+        
+        // Disable copying
+        BucketsHolder(const BucketsHolder&) = delete;
+        BucketsHolder& operator=(const BucketsHolder&) = delete;
+        
+        // Enable moving
+        BucketsHolder(BucketsHolder&& other) noexcept : capacity(other.capacity), buckets(other.buckets) {
+            other.capacity = 0;
+            other.buckets = nullptr;
+        }
+        BucketsHolder& operator=(BucketsHolder&& other) noexcept {
+            if(this == &other) {
+                return *this;
+            }
+
+            std::swap(capacity, other.capacity);
+            std::swap(buckets, other.buckets);
+
+            return *this;
+        }
+
+        void rehash(size_t newCapacity) {
+            // Create new array of buckets
+            Node** newBuckets = new Node*[newCapacity]();
+            
+            // Move all nodes to new buckets
+            for(size_t i = 0; i < capacity; ++i) {
+                Node* current = buckets[i];
+                while(current) {
+                    Node* next = current->next;
+                    // Calculate new index based on new capacity
+                    size_t newIndex = std::hash<K>{}(current->key) % newCapacity;
+                    // Insert at beginning of new bucket
+                    current->next = newBuckets[newIndex];
+                    newBuckets[newIndex] = current;
+                    current = next;
+                }
+            }
+            
+            // Delete old array (but not the nodes!)
+            delete[] buckets;
+            
+            // Update capacity and buckets pointer
+            capacity = newCapacity;
+            buckets = newBuckets;
+        }
+
+        Node** get() { return buckets; }
+        Node*& operator[](size_t index) { return buckets[index]; }
+        const Node* operator[](size_t index) const { return buckets[index]; }
+
+    private:
+        size_t capacity;
+        Node** buckets;
+
+        void clear() {
+            if(buckets) {
+                for (size_t i = 0; i < capacity; ++i) {
+                    Node* current = buckets[i];
+                    while(current) {
+                        Node* next = current->next;
+                        delete current;
+                        current = next;
+                    }
+                }
+                delete[] buckets;
+                buckets = nullptr;
+            }
+        }
+    };
+
+    BucketsHolder buckets;
     size_t currentSize;
     size_t capacity;
 
@@ -72,21 +162,17 @@ private:
     size_t hash(const K& key) const { return std::hash<K>{}(key) % capacity; }
     void rehash();
     void copy(const CeTuHashMap& other);
-    void remove();
 };
 
 // Constructor
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-CeTuHashMap<K, V>::CeTuHashMap() : currentSize(0), capacity(defaultSize) {
-    buckets = new Node*[capacity]();  // Initialize all buckets to nullptr
-}
+CeTuHashMap<K, V>::CeTuHashMap() : buckets(defaultSize), currentSize(0), capacity(defaultSize) {}
 
 // Destructor
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>::~CeTuHashMap() noexcept {
-    remove();
 }
 
 // Copy constructor
@@ -100,12 +186,9 @@ CeTuHashMap<K, V>::CeTuHashMap(const CeTuHashMap& other) : currentSize(other.cur
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
-    if (this == &other) {
+    if(this == &other) {
         return *this;
     }
-
-    // Clear existing contents
-    remove();
 
     // Copy from other
     capacity = other.capacity;
@@ -118,9 +201,8 @@ CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(const CeTuHashMap& other) {
 // Move constructor
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(other.buckets),
+CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(std::move(other.buckets)),
     currentSize(other.currentSize), capacity(other.capacity) {
-    other.buckets = nullptr;
     other.currentSize = 0;
     other.capacity = 0;
 }
@@ -129,7 +211,7 @@ CeTuHashMap<K, V>::CeTuHashMap(CeTuHashMap&& other) noexcept : buckets(other.buc
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
-    if (this == &other) {
+    if(this == &other) {
         return *this;
     }
 
@@ -143,12 +225,16 @@ CeTuHashMap<K, V>& CeTuHashMap<K, V>::operator=(CeTuHashMap&& other) noexcept {
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 void CeTuHashMap<K, V>::insert(K key, V value) {
+    if(currentSize > capacity * loadFactor) {
+        rehash();
+    }
+
     size_t index = hash(key);
     
     // Check if key already exists
     Node* current = buckets[index];
-    while (current != nullptr) {
-        if (current->key == key) {
+    while(current != nullptr) {
+        if(current->key == key) {
             current->value = value;  // Update existing value
             return;
         }
@@ -156,19 +242,15 @@ void CeTuHashMap<K, V>::insert(K key, V value) {
     }
 
     // Create new node and insert at the beginning of the list
-    Node* newNode = new Node(std::move(key), std::move(value));
-    newNode->next = buckets[index];
-    buckets[index] = newNode;
+    NodeHolder newNode(std::move(key), std::move(value));
+    newNode.get()->next = buckets[index];
+    buckets[index] = newNode.release();
     currentSize++;
-
-    if (currentSize > capacity * loadFactor) {
-        rehash();
-    }
 }
 
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-std::optional<V>  CeTuHashMap<K, V>::lookup(K key) const {
+std::optional<V>  CeTuHashMap<K, V>::lookup(K key) {
     if(currentSize == 0) {
         return std::nullopt;
     }
@@ -176,9 +258,9 @@ std::optional<V>  CeTuHashMap<K, V>::lookup(K key) const {
     size_t index = hash(key);
     Node* current = buckets[index];
     
-    while (current != nullptr) {
-        if (current->key == key) {
-            return std::optional<V>(current->value);
+    while(current != nullptr) {
+        if(current->key == key) {
+            return std::make_optional(current->value);
         }
         current = current->next;
     }
@@ -197,9 +279,9 @@ void CeTuHashMap<K, V>::erase(K key) {
     Node* current = buckets[index];
     Node* prev = nullptr;
 
-    while (current != nullptr) {
-        if (current->key == key) {
-            if (prev == nullptr) {
+    while(current != nullptr) {
+        if(current->key == key) {
+            if(prev == nullptr) {
                 buckets[index] = current->next;
             } else {
                 prev->next = current->next;
@@ -216,64 +298,34 @@ void CeTuHashMap<K, V>::erase(K key) {
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 void CeTuHashMap<K, V>::rehash() {
-    size_t oldCapacity = capacity;
-    capacity *= 2;
-    Node** oldBuckets = buckets;
-
-    buckets = new Node*[capacity];
-    for (size_t i = 0; i < capacity; ++i) {
-        buckets[i] = nullptr;
-    }
-
-    currentSize = 0;
-    for (size_t i = 0; i < oldCapacity; ++i) {
-        Node* current = oldBuckets[i];
-        while (current) {
-            Node* next = current->next;
-            insert(std::move(current->key), std::move(current->value));
-            delete current;
-            current = next;
-        }
-    }
-
-    delete[] oldBuckets;
+    size_t newCapacity = capacity * 2;
+    buckets.rehash(newCapacity);
+    capacity = newCapacity;
 }
 
 template<typename K, typename V>
 requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
 void CeTuHashMap<K, V>::copy(const CeTuHashMap& other) {
-    buckets = new Node*[capacity]();
-    for (size_t i = 0; i < capacity; i++) {
-        if (other.buckets[i] != nullptr) {
+    BucketsHolder tempBuckets(capacity);
+    for(size_t i = 0; i < capacity; i++) {
+        if(other.buckets[i] != nullptr) {
             // Copy the linked list at this bucket
-            Node* otherCurrent = other.buckets[i];
+            Node* otherCurrent = const_cast<Node*>(other.buckets[i]);
             Node* prev = nullptr;
-            while (otherCurrent != nullptr) {
-                Node* newNode = new Node(otherCurrent->key, otherCurrent->value);
-                if (prev == nullptr) {
-                    buckets[i] = newNode;
+            while(otherCurrent != nullptr) {
+                NodeHolder newNode(otherCurrent->key, otherCurrent->value);
+                Node* current = newNode.release();
+                if(prev == nullptr) {
+                    tempBuckets[i] = current;
                 } else {
-                    prev->next = newNode;
+                    prev->next = current;
                 }
-                prev = newNode;
+                prev = current;
                 otherCurrent = otherCurrent->next;
             }
         }
     }
-}
-
-template<typename K, typename V>
-requires Hashable<K> && EqualityComparable<K> && CopyAssignableAndConstructible<K, V>
-void CeTuHashMap<K, V>::remove() {
-    for (size_t i = 0; i < capacity; i++) {
-        Node* current = buckets[i];
-        while (current != nullptr) {
-            Node* next = current->next;
-            delete current;
-            current = next;
-        }
-    }
-    delete[] buckets;
+    buckets = std::move(tempBuckets);
 }
 
 #endif // CETU_HASHMAP_H

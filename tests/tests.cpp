@@ -135,14 +135,15 @@ TEST(CeTuHashMap, UpdateExistingKeyTest) {
 }
 
 TEST(CeTuHashMap, RehashTest) {
-    CeTuHashMap<int, int> map;
+    static constexpr int elementsCount = 1000;
 
-    for(size_t i = 0; i < 1000; ++i){
+    CeTuHashMap<int, int> map;
+    for(size_t i = 0; i < elementsCount; ++i) {
         map.insert(i, i);
         ASSERT_EQ(map.size(), i + 1);
     }
 
-    for(size_t i = 0; i < 1000; ++i){
+    for(size_t i = 0; i < elementsCount; ++i) {
         auto value = map.lookup(i);
         ASSERT_TRUE(value.has_value());
         ASSERT_EQ(*value, i);
@@ -150,9 +151,9 @@ TEST(CeTuHashMap, RehashTest) {
 }
 
 TEST(CeTuHashMap, StressTest) {
-    CeTuHashMap<int, int> map;
     static constexpr int elementsCount = 1000;
     
+    CeTuHashMap<int, int> map;
     // Insert many elements
     for (int i = 0; i < elementsCount; ++i) {
         map.insert(i, i * 2);
